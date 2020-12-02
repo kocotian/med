@@ -7,11 +7,13 @@
 #define VERSION "0.1"
 
 static void dumpwave(float *wave, size_t wsize);
-static size_t readf32le(char *filename, float **wave);
-static void savef32le(char *filename, float *wave, size_t wsize);
+static size_t readf32(char *filename, float **wave, char endianness);
+static void savef32(char *filename, float *wave, size_t wsize, char endianness);
+static float wavelength(size_t wavesize, int sampleRate, int channels);
 static void wavereverse(float **wave, size_t beginning, size_t ending);
 static void usage(void);
 
+#include "config.h"
 char *argv0;
 
 static void
@@ -24,7 +26,7 @@ dumpwave(float *wave, size_t wsize)
 }
 
 static size_t
-readf32le(char *filename, float **wave)
+readf32(char *filename, float **wave, char endianness)
 {
 	FILE *fp = NULL; /* wave *file */
 	int ch[4]; /* temporary buffer */
@@ -41,10 +43,10 @@ readf32le(char *filename, float **wave)
 
 	*wave = malloc(0);
 
-	while ((ch[0] = fgetc(fp), /* this code will work only on | 0 -> 3 */
-			ch[1] = fgetc(fp), /* little endian architectures | 1 -> 2 */
-			ch[2] = fgetc(fp), /* like x86, on big endian you | 2 -> 1 */
-			ch[3] = fgetc(fp)) != -1) { /* must reverse array | 3 -> 0 */
+	while ((ch[endianness ? 3 : 0] = fgetc(fp), /* this code will work only on | ? 0 : 3] = | */
+			ch[endianness ? 2 : 1] = fgetc(fp), /* little endian architectures | ? 1 : 2] = | */
+			ch[endianness ? 1 : 2] = fgetc(fp), /* like x86, on big endian you | ? 2 : 1] = | */
+			ch[endianness ? 0 : 3] = fgetc(fp)) != -1) { /* must reverse array | ? 3 : 0] = | */
 		fcarr.carr[0] = (int)ch[0]; fcarr.carr[1] = (int)ch[1];
 		fcarr.carr[2] = (int)ch[2]; fcarr.carr[3] = (int)ch[3];
 		*wave = realloc(*wave, sizeof(float) * ++wsize);
@@ -57,7 +59,7 @@ readf32le(char *filename, float **wave)
 }
 
 static void
-savef32le(char *filename, float *wave, size_t wsize)
+savef32(char *filename, float *wave, size_t wsize, char endianness)
 {
 	FILE *fp = NULL; /* wave *file */
 	union {
@@ -72,11 +74,17 @@ savef32le(char *filename, float *wave, size_t wsize)
 	while (wsize--) {
 		carrf.f = *(wave++);
 		fprintf(fp, "%c%c%c%c",
-				carrf.carr[0], carrf.carr[1],
-				carrf.carr[2], carrf.carr[3]);
+				carrf.carr[endianness ? 3 : 0], carrf.carr[endianness ? 2 : 1],
+				carrf.carr[endianness ? 1 : 2], carrf.carr[endianness ? 0 : 3]);
 	}
 
 	fclose(fp);
+}
+
+static float
+wavelength(size_t wsize, int sampleRate, int channels)
+{
+	return (float)wsize / sampleRate / channels;
 }
 
 static void
@@ -105,6 +113,7 @@ main(int argc, char *argv[])
 {
 	char *format = "f32le"; /* by default cbms reads stream as f32le wave */
 	int sampleRate = 48000; /* by default sample rate is 48 kHz */
+	int channels = 2;
 	float *wave = NULL;
 	size_t wsize = 0;
 
@@ -115,6 +124,8 @@ main(int argc, char *argv[])
 		format = ARGF(); break;
 	case 's':
 		sampleRate = (int)strtol(ARGF(), NULL, 10); break;
+	case 'c':
+		channels = (int)strtol(ARGF(), NULL, 10); break;
 	default:
 		usage(); break;
 	} ARGEND
@@ -123,11 +134,17 @@ main(int argc, char *argv[])
 		usage();
 
 	if (!strcmp(format, "f32le"))
-		wsize = readf32le(argv[0], &wave);
+		wsize = readf32(argv[0], &wave, 0);
+	else if (!strcmp(format, "f32be"))
+		wsize = readf32(argv[0], &wave, 1);
 	else
 		die("unknown wave format [check -f parameter]");
 
-	wavereverse(&wave, 0, wsize);
-	savef32le(argv[0], wave, wsize);
+	printf("==================\nloaded [%s].\nsample rate: %d.\nwave length: %fs.\n",
+			argv[0], sampleRate, wavelength(wsize, sampleRate, channels));
+
+	/* wavereverse(&wave, 0, wsize); */
+	dumpwave(wave, wsize);
+	/* savef32(argv[0], wave, wsize, 0); */
 	free(wave);
 }
