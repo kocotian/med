@@ -9,6 +9,7 @@
 static void dumpwave(float *wave, size_t wsize);
 static size_t readf32le(char *filename, float **wave);
 static void savef32le(char *filename, float *wave, size_t wsize);
+static void wavereverse(float **wave, size_t beginning, size_t ending);
 static void usage(void);
 
 char *argv0;
@@ -79,6 +80,21 @@ savef32le(char *filename, float *wave, size_t wsize)
 }
 
 static void
+wavereverse(float **wave, size_t beginning, size_t ending)
+{
+	size_t bufsiz = ending - beginning;
+	float *wavebuf = malloc(sizeof(float) * bufsiz);
+	size_t iter = -1;
+	while (++iter < bufsiz)
+		wavebuf[iter] = (*wave)[beginning + iter];
+	iter = -1; ++ending;
+	while (ending-- > beginning) {
+		(*wave)[(iter + beginning) - 1] = wavebuf[bufsiz - ++iter];
+	}
+	free(wavebuf);
+}
+
+static void
 usage(void)
 {
 	die("usage: %s [-v] [-f waveformat] wave", argv0);
@@ -111,7 +127,7 @@ main(int argc, char *argv[])
 	else
 		die("unknown wave format [check -f parameter]");
 
-	dumpwave(wave, wsize);
+	wavereverse(&wave, 0, wsize);
 	savef32le(argv[0], wave, wsize);
 	free(wave);
 }
