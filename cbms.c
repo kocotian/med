@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "arg.h"
 #include "util.c"
@@ -7,6 +8,7 @@
 
 static void dumpwave(float *wave, size_t wsize);
 static size_t readf32le(char *filename, float **wave);
+static void savef32le(char *filename, float *wave, size_t wsize);
 static void usage(void);
 
 char *argv0;
@@ -54,6 +56,29 @@ readf32le(char *filename, float **wave)
 }
 
 static void
+savef32le(char *filename, float *wave, size_t wsize)
+{
+	FILE *fp = NULL; /* wave *file */
+	union {
+		char carr[4];
+		float f;
+	} carrf; /* union that converts float to 4 chars array */
+
+	if ((fp = fopen(filename, "w")) == NULL) {
+		die("unable to open %s:", filename);
+	} /* opening file */
+
+	while (wsize--) {
+		carrf.f = *(wave++);
+		fprintf(fp, "%c%c%c%c",
+				carrf.carr[0], carrf.carr[1],
+				carrf.carr[2], carrf.carr[3]);
+	}
+
+	fclose(fp);
+}
+
+static void
 usage(void)
 {
 	die("usage: %s [-v] [-f waveformat] wave", argv0);
@@ -63,6 +88,7 @@ int
 main(int argc, char *argv[])
 {
 	char *format = "f32le"; /* by default cbms reads stream as f32le wave */
+	int sampleRate = 48000; /* by default sample rate is 48 kHz */
 	float *wave = NULL;
 	size_t wsize = 0;
 
@@ -71,6 +97,8 @@ main(int argc, char *argv[])
 		die("cbms-"VERSION, argv0); break;
 	case 'f':
 		format = ARGF(); break;
+	case 's':
+		sampleRate = (int)strtol(ARGF(), NULL, 10); break;
 	default:
 		usage(); break;
 	} ARGEND
@@ -84,5 +112,6 @@ main(int argc, char *argv[])
 		die("unknown wave format [check -f parameter]");
 
 	dumpwave(wave, wsize);
+	savef32le(argv[0], wave, wsize);
 	free(wave);
 }
