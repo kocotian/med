@@ -5,10 +5,20 @@
 
 #define VERSION "0.1"
 
+static void dumpwave(float *wave, size_t wsize);
 static size_t readf32le(char *filename, float **wave);
 static void usage(void);
 
 char *argv0;
+
+static void
+dumpwave(float *wave, size_t wsize)
+{
+	float *wptr = wave + 1;
+	while (wsize--)
+		printf("[%6ld]: %f\n",
+				wave - wptr, *(wave++));
+}
 
 static size_t
 readf32le(char *filename, float **wave)
@@ -28,10 +38,10 @@ readf32le(char *filename, float **wave)
 
 	*wave = malloc(0);
 
-	while ((ch[0] = fgetc(fp),
-			ch[1] = fgetc(fp),
-			ch[2] = fgetc(fp),
-			ch[3] = fgetc(fp)) != -1) {
+	while ((ch[0] = fgetc(fp), /* this code will work only on | 0 -> 3 */
+			ch[1] = fgetc(fp), /* little endian architectures | 1 -> 2 */
+			ch[2] = fgetc(fp), /* like x86, on big endian you | 2 -> 1 */
+			ch[3] = fgetc(fp)) != -1) { /* must reverse array | 3 -> 0 */
 		fcarr.carr[0] = (int)ch[0]; fcarr.carr[1] = (int)ch[1];
 		fcarr.carr[2] = (int)ch[2]; fcarr.carr[3] = (int)ch[3];
 		*wave = realloc(*wave, sizeof(float) * ++wsize);
@@ -73,5 +83,6 @@ main(int argc, char *argv[])
 	else
 		die("unknown wave format [check -f parameter]");
 
+	dumpwave(wave, wsize);
 	free(wave);
 }
