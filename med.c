@@ -6,31 +6,39 @@
 
 #define VERSION "0.1"
 
-static void dumpwave(float *wave, size_t wsize);
-static size_t readf32(char *filename, float **wave, char endianness);
-static void savef32(char *filename, float *wave, size_t wsize, char endianness);
+typedef struct {
+	char *name;
+	float *wave;
+	size_t wsize;
+	int sampleRate, channels;
+} Wave;
+
+static void dumpwave(Wave wave);
+static Wave readf32(char *filename, char endianness, int sampleRate, int channels);
+static void savef32(char *filename, Wave wave, char endianness);
+static void shell(void);
 static float wavelength(size_t wavesize, int sampleRate, int channels);
-static void wavereverse(float **wave, size_t beginning, size_t ending);
+static void wavereverse(Wave *wave, size_t beginning, size_t ending);
 static void usage(void);
 
 #include "config.h"
 char *argv0;
 
 static void
-dumpwave(float *wave, size_t wsize)
+dumpwave(Wave wave)
 {
-	float *wptr = wave + 1;
-	while (wsize--)
+	float *wptr = wave.wave + 1;
+	while (wave.wsize--)
 		printf("[%6ld]: %f\n",
-				wave - wptr, *(wave++));
+				wave.wave - wptr, *(wave.wave++));
 }
 
-static size_t
-readf32(char *filename, float **wave, char endianness)
+static Wave
+readf32(char *filename, char endianness, int sampleRate, int channels)
 {
 	FILE *fp = NULL; /* wave *file */
 	int ch[4]; /* temporary buffer */
-	size_t wsize = 0; /* wave size */
+	Wave ret;
 
 	union {
 		float f;
@@ -41,7 +49,11 @@ readf32(char *filename, float **wave, char endianness)
 		die("unable to open %s:", filename);
 	} /* opening file */
 
-	*wave = malloc(0);
+	ret.name = filename;
+	ret.wave = malloc(0);
+	ret.wsize = 0;
+	ret.sampleRate = sampleRate ? sampleRate : 48000;
+	ret.channels = channels ? channels : 1;
 
 	while ((ch[endianness ? 3 : 0] = fgetc(fp), /* this code will work only on | ? 0 : 3] = | */
 			ch[endianness ? 2 : 1] = fgetc(fp), /* little endian architectures | ? 1 : 2] = | */
@@ -49,17 +61,17 @@ readf32(char *filename, float **wave, char endianness)
 			ch[endianness ? 0 : 3] = fgetc(fp)) != -1) { /* must reverse array | ? 3 : 0] = | */
 		fcarr.carr[0] = (int)ch[0]; fcarr.carr[1] = (int)ch[1];
 		fcarr.carr[2] = (int)ch[2]; fcarr.carr[3] = (int)ch[3];
-		*wave = realloc(*wave, sizeof(float) * ++wsize);
-		(*wave)[wsize - 1] = fcarr.f;
+		ret.wave = realloc(ret.wave, sizeof(float) * ++(ret.wsize));
+		(ret.wave)[ret.wsize - 1] = fcarr.f;
 	}
 
 	fclose(fp);
 
-	return wsize; /* return samples count */
+	return ret;
 }
 
 static void
-savef32(char *filename, float *wave, size_t wsize, char endianness)
+savef32(char *filename, Wave wave, char endianness)
 {
 	FILE *fp = NULL; /* wave *file */
 	union {
@@ -71,14 +83,20 @@ savef32(char *filename, float *wave, size_t wsize, char endianness)
 		die("unable to open %s:", filename);
 	} /* opening file */
 
-	while (wsize--) {
-		carrf.f = *(wave++);
+	while (wave.wsize--) {
+		carrf.f = *(wave.wave++);
 		fprintf(fp, "%c%c%c%c",
 				carrf.carr[endianness ? 3 : 0], carrf.carr[endianness ? 2 : 1],
 				carrf.carr[endianness ? 1 : 2], carrf.carr[endianness ? 0 : 3]);
 	}
 
 	fclose(fp);
+}
+
+static void
+shell(void)
+{
+	while (1);
 }
 
 static float
@@ -88,16 +106,16 @@ wavelength(size_t wsize, int sampleRate, int channels)
 }
 
 static void
-wavereverse(float **wave, size_t beginning, size_t ending)
+wavereverse(Wave *wave, size_t beginning, size_t ending)
 {
 	size_t bufsiz = ending - beginning;
 	float *wavebuf = malloc(sizeof(float) * bufsiz);
 	size_t iter = -1;
 	while (++iter < bufsiz)
-		wavebuf[iter] = (*wave)[beginning + iter];
+		wavebuf[iter] = wave->wave[beginning + iter];
 	iter = -1; ++ending;
 	while (ending-- > beginning) {
-		(*wave)[(iter + beginning) - 1] = wavebuf[bufsiz - ++iter];
+		wave->wave[(iter + beginning) - 1] = wavebuf[bufsiz - ++iter];
 	}
 	free(wavebuf);
 }
@@ -111,11 +129,10 @@ usage(void)
 int
 main(int argc, char *argv[])
 {
-	char *format = "f32le"; /* by default med reads stream as f32le wave */
-	int sampleRate = 48000; /* by default sample rate is 48 kHz */
-	int channels = 2;
-	float *wave = NULL;
-	size_t wsize = 0;
+	char *format = "f32le"; /* by default med reads stream as f32le wave, */
+	int sampleRate = 48000; /* default sample rate is 48 kHz */
+	int channels = 1;       /* and there is 1 channel. */
+	Wave wave;
 
 	ARGBEGIN {
 	case 'v':
@@ -134,17 +151,14 @@ main(int argc, char *argv[])
 		usage();
 
 	if (!strcmp(format, "f32le"))
-		wsize = readf32(argv[0], &wave, 0);
+		wave = readf32(argv[0], 0, sampleRate, channels);
 	else if (!strcmp(format, "f32be"))
-		wsize = readf32(argv[0], &wave, 1);
+		wave = readf32(argv[0], 1, sampleRate, channels);
 	else
 		die("unknown wave format [check -f parameter]");
 
 	printf("==================\nloaded [%s].\nsample rate: %d.\nwave length: %fs.\n",
-			argv[0], sampleRate, wavelength(wsize, sampleRate, channels));
+			argv[0], wave.sampleRate, wavelength(wave.wsize, wave.sampleRate, wave.channels));
 
-	/* wavereverse(&wave, 0, wsize); */
-	dumpwave(wave, wsize);
-	/* savef32(argv[0], wave, wsize, 0); */
-	free(wave);
+	free(wave.wave);
 }
