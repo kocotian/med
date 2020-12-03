@@ -111,7 +111,7 @@ usage(void)
 int
 main(int argc, char *argv[])
 {
-	char *format = "f32le"; /* by default cbms reads stream as f32le wave */
+	char *format = "f32le"; /* by default med reads stream as f32le wave */
 	int sampleRate = 48000; /* by default sample rate is 48 kHz */
 	int channels = 2;
 	float *wave = NULL;
@@ -119,7 +119,7 @@ main(int argc, char *argv[])
 
 	ARGBEGIN {
 	case 'v':
-		die("cbms-"VERSION, argv0); break;
+		die("med-"VERSION, argv0); break;
 	case 'f':
 		format = ARGF(); break;
 	case 's':
