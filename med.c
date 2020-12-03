@@ -11,14 +11,20 @@ typedef struct {
 	float *wave;
 	size_t wsize;
 	int sampleRate, channels;
+	char modificated;
 } Wave;
 
 static void dumpwave(Wave wave);
+static void newwave(Wave **waves, size_t *waven, char *wname);
+static void printwaveinfo(Wave wave);
+static void printwavelist(Wave *waves, size_t waven);
 static Wave readf32(char *filename, char endianness, int sampleRate, int channels);
 static void savef32(char *filename, Wave wave, char endianness);
-static void shell(void);
+static void selectwave(Wave *waves, size_t waven, int *selwav, char *l);
+static void shell(Wave **waves, size_t *waven);
 static float wavelength(size_t wavesize, int sampleRate, int channels);
 static void wavereverse(Wave *wave, size_t beginning, size_t ending);
+static void writewave(Wave wave, char *name);
 static void usage(void);
 
 #include "config.h"
@@ -31,6 +37,46 @@ dumpwave(Wave wave)
 	while (wave.wsize--)
 		printf("[%6ld]: %f\n",
 				wave.wave - wptr, *(wave.wave++));
+}
+
+static void
+newwave(Wave **waves, size_t *waven, char *wname)
+{
+	int ls = 0, lr = 0;
+	*waves = realloc(*waves, sizeof(Wave) * ++(*waven));
+	if (*wname == NULL) {
+		printf("name [enter for default]: ");
+		if ((lr = getline(&wname, &ls, stdin)) < 2)
+			wname = "[no name]";
+		if (wname[lr - 1] == '\n') wname[lr - 1] = '\0';
+	}
+	(*waves)[(*waven) - 1].name = calloc(strlen(wname), 0);
+	strncpy((*waves)[(*waven) - 1].name, wname, strlen(wname));
+	(*waves)[(*waven) - 1].sampleRate = 48000;
+	(*waves)[(*waven) - 1].channels = 2;
+}
+
+static void
+printwaveinfo(Wave wave)
+{
+	if (wave.name != NULL)
+		printf("\"%s\":\n\
+\tsample rate: %d,\n\
+\tchannels:    %d,\n\
+\twave length: %fs;\n",
+				wave.name, wave.sampleRate, wave.channels,
+				wavelength(wave.wsize, wave.sampleRate, wave.channels));
+	else
+		puts("wave is null");
+}
+
+static void
+printwavelist(Wave *waves, size_t waven)
+{
+	Wave *ws = waves--;
+	while (++waves - ws < waven)
+		printf("[%ld]: \"%s\"\n",
+			waves - ws, (*waves).name);
 }
 
 static Wave
@@ -94,9 +140,51 @@ savef32(char *filename, Wave wave, char endianness)
 }
 
 static void
-shell(void)
+selectwave(Wave *waves, size_t waven, int *selwav, char *l)
 {
-	while (1);
+	*selwav = strtol(++l, NULL, 10);
+	if (*selwav >= waven)
+		printf("wave [%d] doesn't exist, unselecting\n",
+				*selwav), *selwav = -1;
+}
+
+static void
+shell(Wave **waves, size_t *waven)
+{
+	char *l; size_t lsiz = 0, lsizr = 0;
+	int selwav = -1;
+
+	l = malloc(lsiz);
+	printf(":");
+	while ((lsizr = getline(&l, &lsiz, stdin)) != EOF) {
+		if (l[lsizr - 1] == '\n') l[lsizr - 1] = '\0';
+		switch (*l) {
+		case 'i': /* info */
+			printwaveinfo((*waves)[selwav]); break;
+		case 'l': /* list */
+			printwavelist(*waves, *waven); break;
+		case 'n': /* new */
+			newwave(waves, waven, l + 1); break;
+		case 's': /* select wave */
+			selectwave(*waves, *waven, &selwav, l); break;
+		case 'w': /* write */
+			writewave((*waves)[selwav], l + 1); break;
+		case 'q':
+			goto stop; break;
+		case '#':
+			break;
+		default:
+			puts("?"); break;
+		}
+		if (selwav != -1)
+			printf("[wave: %d]:", selwav);
+		else
+			printf(":");
+	}
+
+	puts("");
+	stop:
+	free(l);
 }
 
 static float
@@ -114,10 +202,17 @@ wavereverse(Wave *wave, size_t beginning, size_t ending)
 	while (++iter < bufsiz)
 		wavebuf[iter] = wave->wave[beginning + iter];
 	iter = -1; ++ending;
-	while (ending-- > beginning) {
+	while (ending-- > beginning)
 		wave->wave[(iter + beginning) - 1] = wavebuf[bufsiz - ++iter];
-	}
 	free(wavebuf);
+}
+
+static void
+writewave(Wave wave, char *name)
+{
+	if (*name == NULL)
+		name = wave.name;
+	savef32(name, wave, 0);
 }
 
 static void
@@ -132,7 +227,9 @@ main(int argc, char *argv[])
 	char *format = "f32le"; /* by default med reads stream as f32le wave, */
 	int sampleRate = 48000; /* default sample rate is 48 kHz */
 	int channels = 1;       /* and there is 1 channel. */
-	Wave wave;
+	Wave *waves;            /* this is a waves array */
+	size_t waven = 0;       /* and the size of array. */
+	int argx = -1;          /* iterator for files (argv) */
 
 	ARGBEGIN {
 	case 'v':
@@ -147,18 +244,22 @@ main(int argc, char *argv[])
 		usage(); break;
 	} ARGEND
 
-	if (argc != 1)
-		usage();
+	waves = malloc(0);
 
-	if (!strcmp(format, "f32le"))
-		wave = readf32(argv[0], 0, sampleRate, channels);
-	else if (!strcmp(format, "f32be"))
-		wave = readf32(argv[0], 1, sampleRate, channels);
-	else
-		die("unknown wave format [check -f parameter]");
+	while (++argx < argc) {
+		waves = realloc(waves, sizeof(Wave) * ++waven);
+		if (!strcmp(format, "f32le"))
+			waves[argx] = readf32(argv[argx], 0, sampleRate, channels);
+		else if (!strcmp(format, "f32be"))
+			waves[argx] = readf32(argv[argx], 1, sampleRate, channels);
+		else
+			die("unknown wave format [check -f parameter]");
+	}
 
-	printf("==================\nloaded [%s].\nsample rate: %d.\nwave length: %fs.\n",
-			argv[0], wave.sampleRate, wavelength(wave.wsize, wave.sampleRate, wave.channels));
+	shell(&waves, &waven);
 
-	free(wave.wave);
+	argx = -1;
+	while (++argx < waven)
+		free(waves[argx].wave);
+	free(waves);
 }
