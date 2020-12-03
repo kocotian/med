@@ -1,3 +1,5 @@
+#define _XOPEN_SOURCE 700
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -42,10 +44,10 @@ dumpwave(Wave wave)
 static void
 newwave(Wave **waves, size_t *waven, char *wname)
 {
-	int ls = 0, lr = 0;
+	size_t ls = 0, lr = 0;
 	*waves = realloc(*waves, sizeof(Wave) * ++(*waven));
-	if (*wname == NULL) {
-		printf("name [enter for default]: ");
+	if (*wname == '\0') {
+		printf("name [blank for default]: ");
 		if ((lr = getline(&wname, &ls, stdin)) < 2)
 			wname = "[no name]";
 		if (wname[lr - 1] == '\n') wname[lr - 1] = '\0';
@@ -74,7 +76,7 @@ static void
 printwavelist(Wave *waves, size_t waven)
 {
 	Wave *ws = waves--;
-	while (++waves - ws < waven)
+	while ((++waves - ws) < waven)
 		printf("[%ld]: \"%s\"\n",
 			waves - ws, (*waves).name);
 }
@@ -91,9 +93,8 @@ readf32(char *filename, char endianness, int sampleRate, int channels)
 		char carr[4];
 	} fcarr; /* union that converts 4 chars from file to float */
 
-	if ((fp = fopen(filename, "r")) == NULL) {
-		die("unable to open %s:", filename);
-	} /* opening file */
+	if ((fp = fopen(filename, "r")) == NULL)
+		die("unable to open %s:", filename); /* opening file */
 
 	ret.name = filename;
 	ret.wave = malloc(0);
@@ -210,9 +211,7 @@ wavereverse(Wave *wave, size_t beginning, size_t ending)
 static void
 writewave(Wave wave, char *name)
 {
-	if (*name == NULL)
-		name = wave.name;
-	savef32(name, wave, 0);
+	savef32((*name == NULL ? wave.name : name), wave, 0);
 }
 
 static void
