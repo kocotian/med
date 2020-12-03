@@ -1,4 +1,4 @@
 CC=gcc
 
-cbms: cbms.c
+med: med.c
 	${CC} -o $@ $< -std=c99 -Wall -Wextra -pedantic
