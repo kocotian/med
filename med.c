@@ -17,6 +17,7 @@ typedef struct {
 } Wave;
 
 static void dumpwave(Wave wave);
+static void editwave(Wave **waves, size_t *waven, char *wname);
 static void newwave(Wave **waves, size_t *waven, char *wname);
 static void printwaveinfo(Wave wave);
 static void printwavelist(Wave *waves, size_t waven);
@@ -39,6 +40,17 @@ dumpwave(Wave wave)
 	while (wave.wsize--)
 		printf("[%6ld]: %f\n",
 				wave.wave - wptr, *(wave.wave++));
+}
+
+static void
+editwave(Wave **waves, size_t *waven, char *wname)
+{
+	size_t ls = 0;
+	*waves = realloc(*waves, sizeof(Wave) * ++(*waven));
+	if (*wname == '\0')
+		printf("filename: "), ls = getline(&wname, &ls, stdin);
+	if (wname[ls - 1] == '\n') wname[ls - 1] = '\0';
+	(*waves)[(*waven) - 1] = readf32(wname, 0, 48000, 2);
 }
 
 static void
@@ -100,7 +112,7 @@ readf32(char *filename, char endianness, int sampleRate, int channels)
 	ret.wave = malloc(0);
 	ret.wsize = 0;
 	ret.sampleRate = sampleRate ? sampleRate : 48000;
-	ret.channels = channels ? channels : 1;
+	ret.channels = channels ? channels : 2;
 
 	while ((ch[endianness ? 3 : 0] = fgetc(fp), /* this code will work only on | ? 0 : 3] = | */
 			ch[endianness ? 2 : 1] = fgetc(fp), /* little endian architectures | ? 1 : 2] = | */
@@ -160,6 +172,8 @@ shell(Wave **waves, size_t *waven)
 	while ((lsizr = getline(&l, &lsiz, stdin)) != EOF) {
 		if (l[lsizr - 1] == '\n') l[lsizr - 1] = '\0';
 		switch (*l) {
+		case 'e': /* edit */
+			editwave(waves, waven, l + 1); break;
 		case 'i': /* info */
 			printwaveinfo((*waves)[selwav]); break;
 		case 'l': /* list */
@@ -170,9 +184,9 @@ shell(Wave **waves, size_t *waven)
 			selectwave(*waves, *waven, &selwav, l); break;
 		case 'w': /* write */
 			writewave((*waves)[selwav], l + 1); break;
-		case 'q':
+		case 'q': /* quit */
 			goto stop; break;
-		case '#':
+		case '#': /* comment */
 			break;
 		default:
 			puts("?"); break;
@@ -225,7 +239,7 @@ main(int argc, char *argv[])
 {
 	char *format = "f32le"; /* by default med reads stream as f32le wave, */
 	int sampleRate = 48000; /* default sample rate is 48 kHz */
-	int channels = 1;       /* and there is 1 channel. */
+	int channels = 2;       /* and there are 2 channels. */
 	Wave *waves;            /* this is a waves array */
 	size_t waven = 0;       /* and the size of array. */
 	int argx = -1;          /* iterator for files (argv) */
