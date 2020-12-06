@@ -29,8 +29,9 @@ static void savef32(char *filename, Wave wave, char endianness);
 static void selectwave(Wave *waves, size_t waven, int *selwav, char *l);
 static void shell(Wave **waves, size_t *waven);
 static void wavedump(Wave wave);
+static void wavevolume(Wave *wave, char *l);
 static float wavelength(size_t wavesize, int sampleRate, int channels);
-static void wavereverse(Wave *wave, size_t beginning, size_t ending);
+static void wavereverse(Wave *wave);
 static void writewave(Wave wave, char *name);
 static void usage(void);
 
@@ -41,7 +42,7 @@ static void
 changewavselection(Wave *wave, char isRight, char *l)
 {
 	size_t *val = isRight ? &(wave->rightSelection) : &(wave->leftSelection);
-	char secs = l[strlen(l) - 1] == 's' ? 1 : 0;
+	char secs = (l[strlen(l) - 1] == 's');
 	switch (*l) {
 	case '=': /* set to X number of samples/seconds */
 		*val = strtol(++l, NULL, 10) * wave->channels * (secs ? wave->sampleRate : 1);
@@ -63,8 +64,12 @@ docommand(Wave **waves, size_t *waven, int *selwav, char *l)
 {
 	if (*selwav < 0)
 		puts("err: no selected wave");
-	else if(!strcmp(l, "dump"))
+	else if(!strcmp("dump", l))
 		wavedump((*waves)[*selwav]);
+	else if(!strcmp("rev", l))
+		wavereverse(&((*waves)[*selwav]));
+	else if(!strcmpt("vol/", l, '/'))
+		wavevolume(&((*waves)[*selwav]), l + 4);
 	else
 		puts("?");
 }
@@ -296,6 +301,16 @@ wavedump(Wave wave)
 				wave.wave - wptr, *(wave.wave++));
 }
 
+static void
+wavevolume(Wave *wave, char *l)
+{
+	int iter = wave->leftSelection == -1 ? -1 : wave->leftSelection - 1;
+	float voldiff;
+	voldiff = strtof(l, NULL);
+	while (++iter < (wave->rightSelection == -1 ? wave->wsize : wave->rightSelection))
+		wave->wave[iter] *= voldiff;
+}
+
 static float
 wavelength(size_t wsize, int sampleRate, int channels)
 {
@@ -303,8 +318,10 @@ wavelength(size_t wsize, int sampleRate, int channels)
 }
 
 static void
-wavereverse(Wave *wave, size_t beginning, size_t ending)
+wavereverse(Wave *wave)
 {
+	size_t beginning = wave->leftSelection == -1 ? 0 : wave->leftSelection - 1,
+		   ending = wave->rightSelection == -1 ? wave->wsize : wave->rightSelection;
 	size_t bufsiz = ending - beginning;
 	float *wavebuf = malloc(sizeof(float) * bufsiz);
 	size_t iter = -1;

@@ -41,3 +41,10 @@ strrep(char *str, char src, char dest)
 	while (*(++str))
 		if (*str == src) *str = dest;
 }
+
+int
+strcmpt(const char *l, const char *r, const char t)
+{
+	for (; *l==*r && *l && *l!=t; l++, r++);
+	return *(unsigned char *)l - *(unsigned char *)r;
+}
