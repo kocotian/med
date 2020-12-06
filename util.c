@@ -33,3 +33,11 @@ die(const char *fmt, ...) {
 
 	exit(1);
 }
+
+void
+strrep(char *str, char src, char dest)
+{
+	--str;
+	while (*(++str))
+		if (*str == src) *str = dest;
+}

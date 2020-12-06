@@ -17,10 +17,11 @@ typedef struct {
 	char modificated;
 } Wave;
 
-static void changewavsel(Wave *wave, char isRight, char *l);
+static void changewavselection(Wave *wave, char isRight, char *l);
 static void docommand(Wave **waves, size_t *waven, int *selwav, char *l);
 static void editwave(Wave **waves, size_t *waven, char *wname);
 static void newwave(Wave **waves, size_t *waven, char *wname);
+static void playwave(Wave wave);
 static void printwaveinfo(Wave wave);
 static void printwavelist(Wave *waves, size_t waven);
 static Wave readf32(char *filename, char endianness, int sampleRate, int channels);
@@ -37,7 +38,7 @@ static void usage(void);
 char *argv0;
 
 static void
-changewavsel(Wave *wave, char isRight, char *l)
+changewavselection(Wave *wave, char isRight, char *l)
 {
 	size_t *val = isRight ? &(wave->rightSelection) : &(wave->leftSelection);
 	char secs = l[strlen(l) - 1] == 's' ? 1 : 0;
@@ -98,9 +99,30 @@ newwave(Wave **waves, size_t *waven, char *wname)
 	strncpy((*waves)[(*waven) - 1].name, wname, strlen(wname));
 	(*waves)[(*waven) - 1].sampleRate = 48000;
 	(*waves)[(*waven) - 1].channels = 2;
-	(*waves)[(*waven) - 1].leftSelection =
-		(*waves)[(*waven) - 1].rightSelection = -1;
-	(*waves)[(*waven) - 1].modificated = 0;
+}
+
+static void
+playwave(Wave wave)
+{
+	char *wname, *cmd;
+	wname = calloc(strlen(wave.name) + 6 /* "/tmp/" = 5, plus null
+										   terminator = 6 */, 0);
+	cmd = calloc(BUFSIZ, 0);
+	free(cmd); /* this is really stupid, i don't know how it works,
+				  without calloc and freeing memory, with NULL as value
+				  of cmd, it crashes. After calloc and freeing allocated
+				  memory it works, when it should not. TODO */
+	strcat(wname, "/tmp/");
+	strcat(wname, wave.name);
+	strrep(wname + 5, '/', '_');
+	savef32(wname, wave, 0);
+	snprintf(cmd, BUFSIZ, "ffplay -autoexit -f f32le -ar %d -channels %d -showmode 0 %s 2> /dev/null",
+			wave.sampleRate, wave.channels, wname);
+	printf("playing: wave \"%s\" @ %dHz with %d channels\n",
+			wave.name, wave.sampleRate, wave.channels);
+	system(cmd);
+	unlink(wname);
+	free(wname);
 }
 
 static void
@@ -142,7 +164,7 @@ printwavelist(Wave *waves, size_t waven)
 			waves - ws, (*waves).name);
 }
 
-static Wave
+static Wave             /* 1 is bigger than 0, so 1 is big endian ;) */
 readf32(char *filename, char endianness, int sampleRate, int channels)
 {
 	FILE *fp = NULL; /* wave *file */
@@ -160,9 +182,10 @@ readf32(char *filename, char endianness, int sampleRate, int channels)
 
 	ret.name = filename;
 	ret.wave = malloc(0);
-	ret.wsize = 0;
+	ret.wsize = ret.modificated = 0;
 	ret.sampleRate = sampleRate ? sampleRate : 48000;
 	ret.channels = channels ? channels : 2;
+	ret.leftSelection = ret.rightSelection = -1;
 
 	while ((ch[endianness ? 3 : 0] = fgetc(fp), /* this code will work only on | ? 0 : 3] = | */
 			ch[endianness ? 2 : 1] = fgetc(fp), /* little endian architectures | ? 1 : 2] = | */
@@ -237,6 +260,8 @@ shell(Wave **waves, size_t *waven)
 		case 'n': /* new */
 			newwave(waves, waven, *(l + 1) == ' ' ?
 					l + 2 : l + 1); break;
+		case 'p': /* play wave */
+			playwave((*waves)[selwav]); break;
 		case 's': /* select wave */
 			selectwave(*waves, *waven, &selwav, l); break;
 		case 'w': /* write */
@@ -245,9 +270,9 @@ shell(Wave **waves, size_t *waven)
 		case 'q': /* quit */
 			goto stop; break;
 		case 'L': /* left selection change */
-			changewavsel(&((*waves)[selwav]), 0, l + 1); break;
+			changewavselection(&((*waves)[selwav]), 0, l + 1); break;
 		case 'R': /* left selection change */
-			changewavsel(&((*waves)[selwav]), 1, l + 1); break;
+			changewavselection(&((*waves)[selwav]), 1, l + 1); break;
 		default:
 			puts("?"); break;
 		}
