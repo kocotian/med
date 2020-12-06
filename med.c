@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "arg.h"
 #include "util.c"
@@ -11,12 +12,13 @@
 typedef struct {
 	char *name;
 	float *wave;
-	size_t wsize;
+	size_t wsize, leftSelection, rightSelection;
 	int sampleRate, channels;
 	char modificated;
 } Wave;
 
-static void dumpwave(Wave wave);
+static void changewavsel(Wave *wave, char isRight, char *l);
+static void docommand(Wave **waves, size_t *waven, int *selwav, char *l);
 static void editwave(Wave **waves, size_t *waven, char *wname);
 static void newwave(Wave **waves, size_t *waven, char *wname);
 static void printwaveinfo(Wave wave);
@@ -25,6 +27,7 @@ static Wave readf32(char *filename, char endianness, int sampleRate, int channel
 static void savef32(char *filename, Wave wave, char endianness);
 static void selectwave(Wave *waves, size_t waven, int *selwav, char *l);
 static void shell(Wave **waves, size_t *waven);
+static void wavedump(Wave wave);
 static float wavelength(size_t wavesize, int sampleRate, int channels);
 static void wavereverse(Wave *wave, size_t beginning, size_t ending);
 static void writewave(Wave wave, char *name);
@@ -34,12 +37,35 @@ static void usage(void);
 char *argv0;
 
 static void
-dumpwave(Wave wave)
+changewavsel(Wave *wave, char isRight, char *l)
 {
-	float *wptr = wave.wave + 1;
-	while (wave.wsize--)
-		printf("[%6ld]: %f\n",
-				wave.wave - wptr, *(wave.wave++));
+	size_t *val = isRight ? &(wave->rightSelection) : &(wave->leftSelection);
+	char secs = l[strlen(l) - 1] == 's' ? 1 : 0;
+	switch (*l) {
+	case '=': /* set to X number of samples/seconds */
+		*val = strtol(++l, NULL, 10) * wave->channels * (secs ? wave->sampleRate : 1);
+		break;
+	case '+': /* add X number of samples/seconds */
+		*val += strtol(++l, NULL, 10) * wave->channels * (secs ? wave->sampleRate : 1);
+		break;
+	case '-': /* remove X number of samples/seconds */
+		*val -= strtol(++l, NULL, 10) * wave->channels * (secs ? wave->sampleRate : 1);
+		break;
+	default:
+		printf("err: undefined char: %c\n", *l);
+		break;
+	}
+}
+
+static void
+docommand(Wave **waves, size_t *waven, int *selwav, char *l)
+{
+	if (*selwav < 0)
+		puts("err: no selected wave");
+	else if(!strcmp(l, "dump"))
+		wavedump((*waves)[*selwav]);
+	else
+		puts("?");
 }
 
 static void
@@ -51,6 +77,10 @@ editwave(Wave **waves, size_t *waven, char *wname)
 		printf("filename: "), ls = getline(&wname, &ls, stdin);
 	if (wname[ls - 1] == '\n') wname[ls - 1] = '\0';
 	(*waves)[(*waven) - 1] = readf32(wname, 0, 48000, 2);
+	(*waves)[(*waven) - 1].name = wname;
+	(*waves)[(*waven) - 1].leftSelection =
+		(*waves)[(*waven) - 1].rightSelection = -1;
+	(*waves)[(*waven) - 1].modificated = 0;
 }
 
 static void
@@ -68,6 +98,9 @@ newwave(Wave **waves, size_t *waven, char *wname)
 	strncpy((*waves)[(*waven) - 1].name, wname, strlen(wname));
 	(*waves)[(*waven) - 1].sampleRate = 48000;
 	(*waves)[(*waven) - 1].channels = 2;
+	(*waves)[(*waven) - 1].leftSelection =
+		(*waves)[(*waven) - 1].rightSelection = -1;
+	(*waves)[(*waven) - 1].modificated = 0;
 }
 
 static void
@@ -75,11 +108,27 @@ printwaveinfo(Wave wave)
 {
 	if (wave.name != NULL)
 		printf("\"%s\":\n\
-\tsample rate: %d,\n\
-\tchannels:    %d,\n\
-\twave length: %fs;\n",
+\tsample rate:      %d,\n\
+\tchannels:         %d,\n\
+\twave length:      %fs,\n\
+\tleft selection:  +%fs,\n\
+\tright selection: +%fs,\n\
+\tselection size:   %fs,\n\
+\tmodificated:      %s;\n",
 				wave.name, wave.sampleRate, wave.channels,
-				wavelength(wave.wsize, wave.sampleRate, wave.channels));
+				wavelength(wave.wsize, wave.sampleRate, wave.channels),
+				wave.leftSelection == -1 ? 0 :
+					wavelength(wave.leftSelection, wave.sampleRate, wave.channels),
+				wave.rightSelection == -1 ?
+					wavelength(wave.wsize, wave.sampleRate, wave.channels) :
+					wavelength(wave.rightSelection, wave.sampleRate, wave.channels),
+				wavelength(
+					(wave.rightSelection == -1 ? wave.wsize :
+						wave.rightSelection) -
+					(wave.leftSelection == -1 ? 0 :
+						wave.leftSelection),
+					wave.sampleRate, wave.channels),
+				wave.modificated ? "yes" : "no");
 	else
 		puts("wave is null");
 }
@@ -106,7 +155,8 @@ readf32(char *filename, char endianness, int sampleRate, int channels)
 	} fcarr; /* union that converts 4 chars from file to float */
 
 	if ((fp = fopen(filename, "r")) == NULL)
-		die("unable to open %s:", filename); /* opening file */
+		die("unable to open %s:", filename); /* opening file, temporary
+												dies; TODO */
 
 	ret.name = filename;
 	ret.wave = malloc(0);
@@ -169,25 +219,35 @@ shell(Wave **waves, size_t *waven)
 
 	l = malloc(lsiz);
 	printf(":");
-	while ((lsizr = getline(&l, &lsiz, stdin)) != EOF) {
+	while ((lsizr = getline(&l, &lsiz, stdin)) > 0) {
 		if (l[lsizr - 1] == '\n') l[lsizr - 1] = '\0';
 		switch (*l) {
+		case '#': /* comment */
+			break;
+		case ':': /* command */
+			docommand(waves, waven, &selwav, l + 1);
+			break;
 		case 'e': /* edit */
-			editwave(waves, waven, l + 1); break;
+			editwave(waves, waven, *(l + 1) == ' ' ?
+					l + 2 : l + 1); break;
 		case 'i': /* info */
 			printwaveinfo((*waves)[selwav]); break;
 		case 'l': /* list */
 			printwavelist(*waves, *waven); break;
 		case 'n': /* new */
-			newwave(waves, waven, l + 1); break;
+			newwave(waves, waven, *(l + 1) == ' ' ?
+					l + 2 : l + 1); break;
 		case 's': /* select wave */
 			selectwave(*waves, *waven, &selwav, l); break;
 		case 'w': /* write */
-			writewave((*waves)[selwav], l + 1); break;
+			writewave((*waves)[selwav], *(l + 1) == ' ' ?
+					l + 2 : l + 1); break;
 		case 'q': /* quit */
 			goto stop; break;
-		case '#': /* comment */
-			break;
+		case 'L': /* left selection change */
+			changewavsel(&((*waves)[selwav]), 0, l + 1); break;
+		case 'R': /* left selection change */
+			changewavsel(&((*waves)[selwav]), 1, l + 1); break;
 		default:
 			puts("?"); break;
 		}
@@ -200,6 +260,15 @@ shell(Wave **waves, size_t *waven)
 	puts("");
 	stop:
 	free(l);
+}
+
+static void
+wavedump(Wave wave)
+{
+	float *wptr = wave.wave + 1;
+	while (wave.wsize--)
+		printf("[%6ld]: %f\n",
+				wave.wave - wptr, *(wave.wave++));
 }
 
 static float
@@ -225,7 +294,7 @@ wavereverse(Wave *wave, size_t beginning, size_t ending)
 static void
 writewave(Wave wave, char *name)
 {
-	savef32((*name == NULL ? wave.name : name), wave, 0);
+	savef32((*name == 0 ? wave.name : name), wave, 0);
 }
 
 static void
